@@ -5,20 +5,20 @@
 \-- a simple, curses-based interactive utility for picking one of a number of things at the terminal
 
 .SH SYNOPSIS
-tpick [OPTIONS...] THING [THINGS...]
+<something> | ppick [OPTIONS...]
 .PP
-tpick -i [OPTIONS...]
+ppick [OPTIONS...] -l THING [THINGS...]
 .PP
-tpick -i [OPTIONS...] COMMAND [ARGUMENTS...]
+ppick -i [OPTIONS...] COMMAND [ARGUMENTS...]
 .SH DESCRIPTION
 .PP
 ppick is a simple, curses-based interactive utility for picking one of a number
-of things.  If one or more THINGS are provided on the command line, then ppick
-interactively picks one of them.  Otherwise, ppick reads lines from standard
-input and offers them for picking.
+of things.  By default THINGS are read from STDIN via a pipe. With -i theTHINGS are provided on the command line, then ppick
+interactively picks one of them. 
 
 To pick something, just start typing characters; only entries containing those characters are displayed.
-Matching is smartcase, and uses fnmatch(3).
+Matching is smartcase, and uses fnmatch(3).  This differs from the well-known pick command in that matches
+are not fuzzy, resulting in fewer extrainous matches.  You may also use the arrow keys etc.
 
 Use ENTER to exit, writing the selected element (the one at the top of the
 list) to standard output.  You can also exit (and fail) using either ESCAPE,
@@ -28,12 +28,15 @@ right?
 .SH OPTIONS
 
 .TP
--i
-read things from standard input (one per line), instead of from the command line
+- [OPTIONS] COMMAND [ARGUMENTS...]
+read things from standard input seperated by new lines, and execute the indicated command with the selected thing as an additional argument
 
 .TP
--i [OPTIONS] COMMAND [ARGUMENTS...]
-read things from standard input, and execute the indicated command with the selected thing as an additional argument
+-w 
+read things from the standard input, seperated by whitespace (eg 1 2 3 gives 3 things)
+.TP
+- [OPTIONS] -l <THINGS>
+read things from the command line (seperated by whitespace)
 
 .TP
 -p TEXT
@@ -65,7 +68,7 @@ output a help message
 
 .SH SEE ALSO
 
-ppick is very similar to tpick, just with different scrolling and much faster screen updates. tpick is similar to slmenu(1), and is also similar to dmenu(1) (although for the terminal, of course).
+ppick is based on tpick, but with different scrolling, much faster screen updates, and some otehr small UI changes. tpick is similar to slmenu(1), and is also similar to dmenu(1) (although for the terminal, of course). ppick differs from pick in that the filter is not matched in a fuzzy fashion. 
 
 .SH EXIT STATUS
 ppick yields an exit status of 0 if a thing was successfully picked, and something else otherwise.

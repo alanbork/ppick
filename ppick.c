@@ -1,0 +1,428 @@
+//  gcc ppick.c -lncurses -o ppick
+
+// precise pick version 1.0 (c) alan robinson
+// in most ways a simpler version of pick, but without the fuzzy matching that 
+// can get way out of hand in pick, fzf, etc. 
+// based on tpick version 1.0.0 from https://github.com/smblott-github/tpick
+// IMHO much improved over tpick: better variable names, improved scrolling, 
+// faster/less flickery display.
+
+
+#include <ncurses.h>
+#include <signal.h>
+#include <ctype.h>
+#include <time.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+// Try to pick up GNU extensions for <fnmatch.h>.
+#if defined(__linux__)
+#define _GNU_SOURCE
+#endif
+
+#include <fnmatch.h>
+
+// FNM_CASEFOLD is a GNU extension.  We get smartcase if we have FNM_CASEFOLD,
+// otherwise matching is case sensitive.
+#ifndef FNM_CASEFOLD
+#define FNM_CASEFOLD 0
+#endif
+
+#define max(a,b)            (((a) > (b)) ? (a) : (b))
+#define min(a,b)            (((a) < (b)) ? (a) : (b))
+
+/* **********************************************************************
+ * Usage.
+ */
+
+char *usage_message[] =
+   {
+      "ppick [OPTIONS...] [THINGS...]",
+      "OPTIONS:",
+      "   -i      : read things from standard input (one per line), instead of from the command line",
+      "   -I      : read things from standard input (whitespace separated), instead of from the command line",
+      "   -p TEXT : prepend TEXT to fnmatch pattern (default is \"*\")",
+      "   -s TEXT : append TEXT to fnmatch pattern (default is \"*\")",
+      "   -f TEXT : set your favourite text, which is added to the search when you type ';'",
+      "   -P      : equivalent to -p \"\"",
+      "   -S      : equivalent to -s \"\"",
+      "   -Q      : disable exit (and fail) on two consecutive q characters",
+      "   -h      : output this help message",
+      0
+   };
+
+void usage(int status)
+{
+   int i;
+   FILE *file = status ? stderr : stdout;
+   for (i=0; usage_message[i]; i+=1)
+      fprintf(file,"%s\n", usage_message[i]);
+   exit(status);
+}
+
+/* **********************************************************************
+ * Start/end curses.
+ */
+
+void curses_start()
+{
+   FILE *fd;
+
+   // Open /dev/tty directly, so that standard input and/or standard output can
+   // be redirected.
+   if ( !(fd = fopen("/dev/tty", "r+")) )
+      { fprintf(stderr, "failed to open /dev/tty\n"); exit(1); }
+
+   set_term(newterm(NULL, fd, fd));
+   cbreak(); 
+   noecho();
+   clear();
+   raw();
+   keypad(stdscr, TRUE);
+   meta(stdscr, TRUE);
+}
+
+void curses_end()
+{
+   clrtoeol();
+   refresh();
+   endwin();
+}
+
+/* **********************************************************************
+ * Utilities.
+ */
+
+void die(int err)
+{
+   curses_end();
+   exit(err);
+}
+
+void fail(char *msg)
+{
+   curses_end();
+   fprintf(stderr, "%s\n", msg);
+   exit(1);
+}
+
+void *non_null(void *ptr)
+{
+   if ( !ptr )
+   {
+      curses_end();
+      fprintf(stderr, "malloc failed\n");
+      exit(1);
+   }
+   return ptr;
+}
+
+/* **********************************************************************
+ * Globals.
+ */
+
+static const char *prompt = "pattern: ";
+static int prompt_len = 0;
+
+static char *prefix = "*";
+static char *suffix = "*";
+static int qq_quits = 1;
+static int standard_input = 0;
+static char **cargv = 0;
+static int cargc = 0;
+static char *favourite = 0;
+
+static int argc;
+static char **argv;
+
+static WINDOW *prompt_win = 0;
+static WINDOW *search_win = 0;
+static WINDOW *main_win = 0;
+
+/* **********************************************************************
+ * Exit keys.
+ * Exit on <ESCAPE>, <CONTROL-C> or, normally, two consecutive 'q's.
+ */
+
+void quit(const int c, const char *kn)
+{
+   static int qcnt = 0;
+
+   if ( qq_quits ) {
+      if ( c == 'q' ) { if ( qcnt ) die(1); else qcnt += 1; }
+      else qcnt = 0;
+   }
+
+   if ( c == 27 /* escape */ || strcmp(kn,"^C") == 0 )
+      die(1);
+}
+
+/* **********************************************************************
+ * Slurp standard input into argv/argc.
+ */
+
+#define MAX_LINE 4096
+
+void add_thing(char *buf)
+{
+   argv = (char **) non_null(realloc(argv,(argc+1)*sizeof(char *)));
+   argv[argc] = (char *) non_null(strdup(buf));
+   argc += 1;
+}
+
+void read_standard_input_lines()
+{
+   char buf[MAX_LINE];
+
+   argc = 0; argv = 0;
+   while ( fgets(buf,MAX_LINE,stdin) )
+   {
+      char *newline = strchr(buf,'\n');
+      if ( newline ) newline[0] = 0;
+      add_thing(buf);
+   }
+}
+
+const char whitespace[] = " \t\b\v\r\n";
+
+void read_standard_input_words()
+{
+   char buf[MAX_LINE];
+
+   argc = 0; argv = 0;
+   while ( fgets(buf,MAX_LINE,stdin) )
+   {
+      char *tok = strtok(buf,whitespace);
+      while ( tok )
+      {
+         add_thing(tok);
+         tok = strtok(NULL,whitespace);
+      }
+   }
+}
+
+/* **********************************************************************
+ * Main.
+ */
+
+void display(int c, char *kn);
+void re_display();
+
+int main(int original_argc, char *original_argv[])
+{
+   prompt_len = strlen(prompt);
+   argc = original_argc;
+   argv = original_argv;
+
+   int opt;
+   while ( (opt = getopt(argc, argv, "Qp:s:PSiIhf:")) != -1 )
+   {
+      switch ( opt )
+      {
+         case 'Q': qq_quits = 0; break;
+         case 'p': prefix = optarg; break;
+         case 's': suffix = optarg; break;
+         case 'P': prefix = ""; break;
+         case 'S': suffix = ""; break;
+         case 'i': standard_input = 1; break;
+         case 'I': standard_input = 2; break;
+         case 'f': favourite = optarg; break;
+         case 'h':usage(0); break;
+         default: usage(1);
+      }
+   }
+
+   argv += optind;
+   argc -= optind;
+
+   if ( standard_input && argc )
+      { cargv = argv; cargc = argc; }
+
+   if ( standard_input == 1 ) read_standard_input_lines();
+   if ( standard_input == 2 ) read_standard_input_words();
+
+   if ( argc == 0 )
+      { fprintf(stderr, "nothing from which to pick\n"); exit(1); }
+
+   signal(SIGINT,  die);
+   signal(SIGQUIT, die);
+   signal(SIGTERM, die);
+   signal(SIGWINCH, re_display);
+
+   curses_start();
+   main_win = newwin(LINES-1,COLS,1,0);
+   prompt_win = newwin(1,prompt_len,0,0);
+   search_win = newwin(1,COLS-prompt_len,0,prompt_len);
+   waddstr(prompt_win,prompt);
+
+   re_display();
+   while ( 1 ) {
+      int c = getch();
+      char *kn = (char *) keyname(c);
+      quit(c,kn);
+      display(c,kn);
+   }
+}
+
+/* **********************************************************************
+ * Pattern matching.
+ */
+
+static char *fn_pattern = 0;
+static int fn_flag = 0;
+
+void fn_match_init(char *needle)
+{
+   int i, len = strlen(needle);
+
+   // Smartcase.
+   fn_flag = FNM_CASEFOLD;
+   for (i=0; i<len && fn_flag; i+=1)
+      if ( isupper(needle[i]) )
+         fn_flag = 0;
+
+   fn_pattern = (char *) non_null(realloc(fn_pattern,strlen(prefix)+len+strlen(suffix)+1));
+   sprintf(fn_pattern, "%s%s%s",prefix,needle,suffix);
+}
+
+int fn_match(char *haystack)
+   { return !fnmatch(fn_pattern,haystack,fn_flag); }
+
+/* **********************************************************************
+ * Display and selection handling.
+ */
+
+void handle_selection(char *selection)
+{
+   if ( cargv )
+   {
+      char **command = (char **) non_null(malloc((cargc+1)*sizeof(char *)));
+      memcpy(command,cargv,(cargc)*sizeof(char *));
+      command[cargc] = selection;
+      execvp(command[0],command);
+      fprintf(stderr, "execvp failed: %s\n", command[0]);
+      exit(1);
+   }
+   else
+      printf("%s\n", selection);
+}
+
+void re_display()
+   { display(0,0); }
+
+void display(int c, char *kn)  // c= character just pressed
+{
+   static char *selection = 0;
+   static char *search = 0;
+   static int search_len = 0;
+   static int current = 0;
+   int i, change = 0;
+
+   if ( c == '\n' ) { // end on enter
+      curses_end();
+      if ( ! selection )
+         exit(1);
+      handle_selection(selection);
+      exit(0);
+   }
+
+   if ( !search )
+      search = (char *) non_null(strdup(""));
+
+   if ( c == ';' && favourite )
+   {
+      char *ptr;
+      for (ptr=favourite; ptr[0]; ptr+=1)
+         display(ptr[0],0);
+      return;
+   }
+
+   if ( kn && strcmp(kn,"KEY_DOWN") == 0 )
+      { current += 1; c = 0; }
+
+   if ( kn && strcmp(kn,"KEY_UP") == 0 )
+      { current -= 1; c = 0; }
+
+   if ( kn && strcmp(kn,"KEY_NPAGE") == 0 )
+      { current += LINES / 2; c = 0; }
+
+   if ( kn && strcmp(kn,"KEY_PPAGE") == 0 )
+      { current -= LINES / 2; c = 0; }
+
+   if ( current < 0 )
+      current = 0;
+
+   if ( c == ' ' )
+      { c = '*'; kn = (char *) keyname(c); }
+
+   if ( isalnum(c) || ispunct(c) )
+      { change = 1; search[search_len] = c; }
+
+   if ( c == KEY_BACKSPACE && 0 < search_len )
+      change = -1;
+
+   if ( change ) { // any change to search string
+      search_len += change;
+      search = (char *) non_null(realloc(search,search_len+1));
+      search[search_len] = 0;
+      wclear(search_win);
+      waddstr(search_win,search);
+      current = 0; // reset to top of results
+   }
+
+   //wclear(main_win);
+   wmove(main_win, 0,0);
+   curs_set(0);
+   selection = 0;
+   fn_match_init(search);
+   
+   int y = 0; // position we draw each line to on the screen
+
+current = min(current, argc-1); // limit selection to last line
+
+int top = 0;
+
+
+if ( current > LINES/2)
+   top = (current-LINES/2);
+
+top = min(top, argc-LINES+1); // don't scroll any further than what is needed to see teh bottom
+   
+   for (i=0; i<argc; i+=1) // argc/argv are actually the lines/etc passed into tpick
+      if ( fn_match(argv[i]) ) 
+      {  
+         y += 1; // we can't use i as y coord because we skip non-matches. So j is our y coordinate
+
+   		if (y < top)
+   			continue;
+
+         if ( y== (LINES+top) ) // bottom of the screen
+         	break;
+         //if ( selection == 0 )
+         //   selection = argv[i];
+         if ( y-current == 1 ) { wattron(main_win, A_REVERSE); selection = argv[i];}
+         waddstr(main_win,argv[i]);
+         if ( y-current == 1 ) wattroff(main_win, A_REVERSE);
+         wclrtoeol(main_win); // clear to end of line
+       //  wmove(main_win,j-offset,0); always at the top option
+       wmove(main_win, y-top,0); 
+      }
+
+//   // Ensure we don't scroll off the bottom of the list.
+//   if ( offset && j <= offset )
+//   {
+//      offset = j ? j-1 : 0;
+//      re_display();
+//      return;
+//   }
+
+   refresh();
+   wrefresh(main_win);
+   wrefresh(prompt_win);
+   wrefresh(search_win);
+   wmove(search_win,0,search_len);
+   curs_set(1);
+}
+

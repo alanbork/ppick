@@ -1,11 +1,11 @@
 //  gcc ppick.c -lncurses -o ppick
 
-// precise pick version 1.0 (c) alan robinson
+// precise pick version 1.0 (c) alan robinson (https://alantechreview.blogspot.com/)
 // in most ways a simpler version of pick, but without the fuzzy matching that 
 // can get way out of hand in pick, fzf, etc. 
 // based on tpick version 1.0.0 from https://github.com/smblott-github/tpick
 // IMHO much improved over tpick: better variable names, improved scrolling, 
-// faster/less flickery display.
+// faster/less flickery display but enough UI changes to merit a fork & new name
 
 
 #include <ncurses.h>
@@ -32,6 +32,7 @@
 
 #define max(a,b)            (((a) > (b)) ? (a) : (b))
 #define min(a,b)            (((a) < (b)) ? (a) : (b))
+#define middle(a,b,c) max(a, min(b, c));
 
 /* **********************************************************************
  * Usage.
@@ -39,10 +40,10 @@
 
 char *usage_message[] =
    {
-      "ppick [OPTIONS...] [THINGS...]",
+      "ppick [OPTIONS...] -l [THINGS...]",
       "OPTIONS:",
-      "   -i      : read things from standard input (one per line), instead of from the command line",
-      "   -I      : read things from standard input (whitespace separated), instead of from the command line",
+      "   -l      : read things from the command line (whitespace seperated)",
+      "   -w      : read things from standard input (whitespace separated)",
       "   -p TEXT : prepend TEXT to fnmatch pattern (default is \"*\")",
       "   -s TEXT : append TEXT to fnmatch pattern (default is \"*\")",
       "   -f TEXT : set your favourite text, which is added to the search when you type ';'",
@@ -53,13 +54,11 @@ char *usage_message[] =
       0
    };
 
-void usage(int status)
+void usage()
 {
-   int i;
-   FILE *file = status ? stderr : stdout;
-   for (i=0; usage_message[i]; i+=1)
-      fprintf(file,"%s\n", usage_message[i]);
-   exit(status);
+
+   for (int i=0; usage_message[i]; i+=1)
+      fprintf(stdout,"%s\n", usage_message[i]);
 }
 
 /* **********************************************************************
@@ -123,19 +122,19 @@ void *non_null(void *ptr)
  * Globals.
  */
 
-static const char *prompt = "pattern: ";
+static char *prompt = "filter: ";
 static int prompt_len = 0;
 
 static char *prefix = "*";
 static char *suffix = "*";
 static int qq_quits = 1;
-static int standard_input = 0;
+static int standard_input = 1; // tpick default =0
 static char **cargv = 0;
 static int cargc = 0;
 static char *favourite = 0;
 
-static int argc;
-static char **argv;
+static int linec;
+static char **lineTxt;
 
 static WINDOW *prompt_win = 0;
 static WINDOW *search_win = 0;
@@ -160,23 +159,23 @@ void quit(const int c, const char *kn)
 }
 
 /* **********************************************************************
- * Slurp standard input into argv/argc.
+ * Slurp standard input into lineTxt/linec.
  */
 
 #define MAX_LINE 4096
 
 void add_thing(char *buf)
 {
-   argv = (char **) non_null(realloc(argv,(argc+1)*sizeof(char *)));
-   argv[argc] = (char *) non_null(strdup(buf));
-   argc += 1;
+   lineTxt = (char **) non_null(realloc(lineTxt,(linec+1)*sizeof(char *)));
+   lineTxt[linec] = (char *) non_null(strdup(buf));
+   linec += 1;
 }
 
 void read_standard_input_lines()
 {
    char buf[MAX_LINE];
 
-   argc = 0; argv = 0;
+   linec = 0; lineTxt = 0;
    while ( fgets(buf,MAX_LINE,stdin) )
    {
       char *newline = strchr(buf,'\n');
@@ -191,7 +190,7 @@ void read_standard_input_words()
 {
    char buf[MAX_LINE];
 
-   argc = 0; argv = 0;
+   linec = 0; lineTxt = 0;
    while ( fgets(buf,MAX_LINE,stdin) )
    {
       char *tok = strtok(buf,whitespace);
@@ -212,12 +211,13 @@ void re_display();
 
 int main(int original_argc, char *original_argv[])
 {
+
    prompt_len = strlen(prompt);
-   argc = original_argc;
-   argv = original_argv;
+   linec = original_argc; 
+   lineTxt = original_argv;
 
    int opt;
-   while ( (opt = getopt(argc, argv, "Qp:s:PSiIhf:")) != -1 )
+   while ( (opt = getopt(linec, lineTxt, "Qp:s:PSlwhf:")) != -1 )
    {
       switch ( opt )
       {
@@ -226,30 +226,32 @@ int main(int original_argc, char *original_argv[])
          case 's': suffix = optarg; break;
          case 'P': prefix = ""; break;
          case 'S': suffix = ""; break;
-         case 'i': standard_input = 1; break;
-         case 'I': standard_input = 2; break;
+         case 'l': standard_input = 0; break;
+         case 'w': standard_input = 2; break;
          case 'f': favourite = optarg; break;
-         case 'h':usage(0); break;
-         default: usage(1);
+         case 'h':usage(0); exit(0); break;
+         default: usage(1); exit(1);
       }
    }
 
-   argv += optind;
-   argc -= optind;
+   lineTxt += optind;
+   linec -= optind;
 
-   if ( standard_input && argc )
-      { cargv = argv; cargc = argc; }
+   if ( standard_input && linec )
+      { cargv = lineTxt; cargc = linec; }
+
+   if ( original_argc == 1 && isatty(STDIN_FILENO)) // abort if no cmd line and no pipe
+      { usage(0);fprintf(stderr, "nothing from which to pick\n"); exit(1); }
 
    if ( standard_input == 1 ) read_standard_input_lines();
    if ( standard_input == 2 ) read_standard_input_words();
 
-   if ( argc == 0 )
-      { fprintf(stderr, "nothing from which to pick\n"); exit(1); }
-
    signal(SIGINT,  die);
    signal(SIGQUIT, die);
    signal(SIGTERM, die);
-   signal(SIGWINCH, re_display);
+  // signal(SIGWINCH, re_display); // default resize handling seems to be best
+
+   ESCDELAY = 10; // quick quit on escape key
 
    curses_start();
    main_win = newwin(LINES-1,COLS,1,0);
@@ -294,7 +296,7 @@ int fn_match(char *haystack)
  * Display and selection handling.
  */
 
-void handle_selection(char *selection)
+void handle_selection(char *selection) // TODO command doesn't work, but maybe this feature isn't worth maintaining and should be removed?
 {
    if ( cargv )
    {
@@ -309,16 +311,29 @@ void handle_selection(char *selection)
       printf("%s\n", selection);
 }
 
-void re_display()
-   { display(0,0); }
+void re_display()  { display(0,0);  } // causes refresh of screen with no button press
 
-void display(int c, char *kn)  // c= character just pressed
+void dbg(int i) // for interactive debugging keep tract of single int on screen realtime
+{
+char tmp[32];   
+wmove(prompt_win, 0,0);
+sprintf(tmp, "%d", i);
+waddstr(prompt_win,tmp);
+wclrtoeol(prompt_win);
+}
+
+void display(int c, char *key)  // c= character just pressed, key = in text
 {
    static char *selection = 0;
    static char *search = 0;
    static int search_len = 0;
-   static int current = 0;
+   static int current = 0; // current selection (indexed count into filtered list)
+   static int bottom = -1;
+   static int end=0;
    int i, change = 0;
+
+   if (bottom == -1)
+   bottom = end = linec;
 
    if ( c == '\n' ) { // end on enter
       curses_end();
@@ -339,30 +354,27 @@ void display(int c, char *kn)  // c= character just pressed
       return;
    }
 
-   if ( kn && strcmp(kn,"KEY_DOWN") == 0 )
+   if ( key && strcmp(key,"KEY_DOWN") == 0 )
       { current += 1; c = 0; }
 
-   if ( kn && strcmp(kn,"KEY_UP") == 0 )
+   if ( key && strcmp(key,"KEY_UP") == 0 )
       { current -= 1; c = 0; }
 
-   if ( kn && strcmp(kn,"KEY_NPAGE") == 0 )
+   if ( key && strcmp(key,"KEY_NPAGE") == 0 )
       { current += LINES / 2; c = 0; }
 
-   if ( kn && strcmp(kn,"KEY_PPAGE") == 0 )
+   if ( key && strcmp(key,"KEY_PPAGE") == 0 )
       { current -= LINES / 2; c = 0; }
 
-   if ( current < 0 )
-      current = 0;
-
    if ( c == ' ' )
-      { c = '*'; kn = (char *) keyname(c); }
+      { c = '*'; key = (char *) keyname(c); }
 
    if ( isalnum(c) || ispunct(c) )
       { change = 1; search[search_len] = c; }
 
    if ( c == KEY_BACKSPACE && 0 < search_len )
       change = -1;
-
+   
    if ( change ) { // any change to search string
       search_len += change;
       search = (char *) non_null(realloc(search,search_len+1));
@@ -370,45 +382,56 @@ void display(int c, char *kn)  // c= character just pressed
       wclear(search_win);
       waddstr(search_win,search);
       current = 0; // reset to top of results
+      bottom = linec; // where is the end of the results? we will have to calculate
+      end = bottom;
+      wclear(main_win); // remove displayed results from screen, as the redrawed list will be shorter
    }
 
-   //wclear(main_win);
-   wmove(main_win, 0,0);
-   curs_set(0);
+   wmove(main_win, 0,0); // will leave filter untouched
+   curs_set(0); // turn off cursor before drawing
    selection = 0;
-   fn_match_init(search);
+  // int top;
+  redo: fn_match_init(search);
    
-   int y = 0; // position we draw each line to on the screen
 
-current = min(current, argc-1); // limit selection to last line
+  int y = 0; // position we draw each line to on the screen
+ 
+  current = middle(0, current, bottom-1); // acceptable range 0...filtered(linec)-1
+  int top = middle(0, (current-LINES/2), end-LINES+2);//linec-LINES+1); // don't scroll any further than what is needed to see the bottom
 
-int top = 0;
-
-
-if ( current > LINES/2)
-   top = (current-LINES/2);
-
-top = min(top, argc-LINES+1); // don't scroll any further than what is needed to see teh bottom
-   
-   for (i=0; i<argc; i+=1) // argc/argv are actually the lines/etc passed into tpick
-      if ( fn_match(argv[i]) ) 
+   for (i=0; i<linec; i+=1) // linec/lineTxt are actually the lines/etc passed into tpick
+      if ( fn_match(lineTxt[i]) ) 
       {  
          y += 1; // we can't use i as y coord because we skip non-matches. So j is our y coordinate
 
-   		if (y < top)
+   		if (y < top) // we updated y already but we have not gotten to top of the window yet
    			continue;
 
-         if ( y== (LINES+top) ) // bottom of the screen
+         if ( y >= (LINES+top) ) // bottom of the screen
          	break;
+            
          //if ( selection == 0 )
-         //   selection = argv[i];
-         if ( y-current == 1 ) { wattron(main_win, A_REVERSE); selection = argv[i];}
-         waddstr(main_win,argv[i]);
+         //   selection = lineTxt[i];
+         if ( y-current == 1 ) { wattron(main_win, A_REVERSE); selection = lineTxt[i];}
+         waddstr(main_win,lineTxt[i]);
          if ( y-current == 1 ) wattroff(main_win, A_REVERSE);
          wclrtoeol(main_win); // clear to end of line
        //  wmove(main_win,j-offset,0); always at the top option
        wmove(main_win, y-top,0); 
       }
+   
+   if (i == linec)
+      {
+      if (y >= (LINES+top))
+         {
+         wclear(main_win);
+         end = y-1;
+         goto redo;
+         }
+      }
+
+   bottom=y;
+   dbg(end);
 
 //   // Ensure we don't scroll off the bottom of the list.
 //   if ( offset && j <= offset )

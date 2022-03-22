@@ -13,8 +13,8 @@ ppick -i [OPTIONS...] COMMAND [ARGUMENTS...]
 .SH DESCRIPTION
 .PP
 ppick is a simple, curses-based interactive utility for picking one of a number
-of things.  By default THINGS are read from STDIN via a pipe. With -i theTHINGS are provided on the command line, then ppick
-interactively picks one of them. 
+of things.  By default THINGS are read from STDIN via a pipe. With -i the THINGS are provided on the command line.
+THINGS are displayed full-screen, one per line.
 
 To pick something, just start typing characters; only entries containing those characters are displayed.
 Matching is smartcase, and uses fnmatch(3).  This differs from the well-known pick command in that matches

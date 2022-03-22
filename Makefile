@@ -1,7 +1,7 @@
 
 .PHONY: build install
 
-target = tpick
+target = ppick
 prefix ?= /usr/local
 
 install = $(prefix)/bin/$(target) $(prefix)/man/man1/$(target).1

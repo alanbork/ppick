@@ -1,7 +1,7 @@
-.TH tpick 1 "September 9, 2014" "version 1.0.0" "USER COMMANDS"
+.TH ppick 1 "2022" "version 1.0.0" "USER COMMANDS"
 
 .SH NAME
-.B tpick
+.B ppick
 \-- a simple, curses-based interactive utility for picking one of a number of things at the terminal
 
 .SH SYNOPSIS
@@ -12,9 +12,9 @@ tpick -i [OPTIONS...]
 tpick -i [OPTIONS...] COMMAND [ARGUMENTS...]
 .SH DESCRIPTION
 .PP
-tpick is a simple, curses-based interactive utility for picking one of a number
-of things.  If one or more THINGS are provided on the command line, then tpick
-interactively picks one of them.  Otherwise, tpick reads lines from standard
+ppick is a simple, curses-based interactive utility for picking one of a number
+of things.  If one or more THINGS are provided on the command line, then ppick
+interactively picks one of them.  Otherwise, ppick reads lines from standard
 input and offers them for picking.
 
 To pick something, just start typing characters; only entries containing those characters are displayed.
@@ -65,12 +65,12 @@ output a help message
 
 .SH SEE ALSO
 
-tpick is similar to slmenu(1), and is also similar to dmenu(1) (although for the terminal, of course).
+ppick is very similar to tpick, just with different scrolling and much faster screen updates. tpick is similar to slmenu(1), and is also similar to dmenu(1) (although for the terminal, of course).
 
 .SH EXIT STATUS
-tpick yields an exit status of 0 if a thing was successfully picked, and something else otherwise.
+ppick yields an exit status of 0 if a thing was successfully picked, and something else otherwise.
 
 .SH AUTHOR
-Stephen Blott (smblott AND-THAT'S-AT gmail.com).
+Alan Robinson (https://github.com/alanbork/ppick); ppick is heavily based on tpick by Stephen Blott.
 
 

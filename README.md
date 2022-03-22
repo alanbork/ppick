@@ -1,5 +1,7 @@
-tpick
+ppick
 =====
+
+work in progress fork of:
 
 `tpick` is a simple, curses-based, interactive utility for picking one of a
 number of things at the terminal.  See the examples in the `examples` directory.

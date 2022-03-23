@@ -132,6 +132,8 @@ static int standard_input = 1; // tpick default =0
 static char **cargv = 0;
 static int cargc = 0;
 static char *favourite = 0;
+char *match; // boolean really
+int matchCount = 0;
 
 static int linec;
 static char **lineTxt;
@@ -154,8 +156,9 @@ void quit(const int c, const char *kn)
       else qcnt = 0;
    }
 
-   if ( c == 27 /* escape */ || strcmp(kn,"^C") == 0 )
+   if (c == 27 /* escape */ || strcmp(kn,"^C") == 0 )
       die(1);
+      
 }
 
 /* **********************************************************************
@@ -209,6 +212,8 @@ void read_standard_input_words()
 void display(int c, char *kn);
 void re_display();
 
+void updateResults(char *needle);
+
 int main(int original_argc, char *original_argv[])
 {
 
@@ -246,6 +251,8 @@ int main(int original_argc, char *original_argv[])
    if ( standard_input == 1 ) read_standard_input_lines();
    if ( standard_input == 2 ) read_standard_input_words();
 
+   match = malloc( linec*sizeof(char ) );
+
    signal(SIGINT,  die);
    signal(SIGQUIT, die);
    signal(SIGTERM, die);
@@ -260,6 +267,8 @@ int main(int original_argc, char *original_argv[])
    waddstr(prompt_win,prompt);
 
    re_display();
+   updateResults(""); // cache the results to start off with. TODO should respect command line args
+
    while ( 1 ) {
       int c = getch();
       char *kn = (char *) keyname(c);
@@ -313,7 +322,7 @@ void handle_selection(char *selection) // TODO command doesn't work, but maybe t
 
 void re_display()  { display(0,0);  } // causes refresh of screen with no button press
 
-void dbg(int i) // for interactive debugging keep tract of single int on screen realtime
+void dbg(int i) // for interactive debugging keep track of single int on screen realtime
 {
 char tmp[32];   
 wmove(prompt_win, 0,0);
@@ -322,18 +331,33 @@ waddstr(prompt_win,tmp);
 wclrtoeol(prompt_win);
 }
 
+void updateResults(char *needle)
+{
+// TODO rather than just caching the results in a sparse list we could rewrite the list which would be faster still but this works ok
+fn_match_init(needle);
+matchCount = 0;
+for (int i = 0; i < linec; i += 1) // linec/lineTxt are actually the lines/etc passed into tpick
+   if (fn_match(lineTxt[i]))
+      {
+      match[i] = 1;
+      matchCount++;
+      }
+   else
+      {
+      match[i] = 0;
+      }
+}
+
 void display(int c, char *key)  // c= character just pressed, key = in text
 {
    static char *selection = 0;
    static char *search = 0;
    static int search_len = 0;
    static int current = 0; // current selection (indexed count into filtered list)
-   static int bottom = -1;
-   static int end=0;
-   int i, change = 0;
+//   static int bottom = -1;
+ //  static int end=0;
+   int change = 0;
 
-   if (bottom == -1)
-   bottom = end = linec;
 
    if ( c == '\n' ) { // end on enter
       curses_end();
@@ -366,6 +390,13 @@ void display(int c, char *key)  // c= character just pressed, key = in text
    if ( key && strcmp(key,"KEY_PPAGE") == 0 )
       { current -= LINES / 2; c = 0; }
 
+    if ( key && strcmp(key,"KEY_HOME") == 0 )
+      { current = 0; c = 0; }   
+
+if ( key && strcmp(key,"KEY_END") == 0 )
+      { current = matchCount; c = 0; }   
+
+
    if ( c == ' ' )
       { c = '*'; key = (char *) keyname(c); }
 
@@ -375,32 +406,50 @@ void display(int c, char *key)  // c= character just pressed, key = in text
    if ( c == KEY_BACKSPACE && 0 < search_len )
       change = -1;
    
-   if ( change ) { // any change to search string
+   if
+    ( change ) { // any change to search string
       search_len += change;
-      search = (char *) non_null(realloc(search,search_len+1));
+      search = (char *) non_null(realloc(search,search_len+1)); // todo seems pointless to maloc this
       search[search_len] = 0;
       wclear(search_win);
       waddstr(search_win,search);
       current = 0; // reset to top of results
-      bottom = linec; // where is the end of the results? we will have to calculate
-      end = bottom;
+
+      updateResults(search);
+    //  bottom = linec; // where is the end of the results? we will have to calculate
+    //  end = bottom;
       wclear(main_win); // remove displayed results from screen, as the redrawed list will be shorter
+     /*
+      fn_match_init(search);
+
+      // TODO rather than just caching the results in a sparse list we could rewrite the list which would be faster still but this works ok
+      matchCount = 0;
+      for (i=0; i<linec; i+=1) // linec/lineTxt are actually the lines/etc passed into tpick
+         if ( fn_match(lineTxt[i]) ) 
+         {
+            match[i] = 1;
+            matchCount++;
+         }
+            else
+            {
+               match[i] = 0;
+            }
+    */        
    }
 
    wmove(main_win, 0,0); // will leave filter untouched
    curs_set(0); // turn off cursor before drawing
    selection = 0;
   // int top;
-  redo: fn_match_init(search);
+ // fn_match_init(search);
    
-
   int y = 0; // position we draw each line to on the screen
  
-  current = middle(0, current, bottom-1); // acceptable range 0...filtered(linec)-1
-  int top = middle(0, (current-LINES/2), end-LINES+2);//linec-LINES+1); // don't scroll any further than what is needed to see the bottom
+  current = middle(0, current, matchCount-1); // acceptable range 0...filtered(linec)-1
+  int top = middle(0, (current-LINES/2), matchCount-LINES+1);//linec-LINES+1); // don't scroll any further than what is needed to see the bottom
 
-   for (i=0; i<linec; i+=1) // linec/lineTxt are actually the lines/etc passed into tpick
-      if ( fn_match(lineTxt[i]) ) 
+   for (int i=0; i<linec; i+=1) // linec/lineTxt are actually the lines/etc passed into tpick
+      if ( match[i] ) // now using cached results, faster plus we know where the end is
       {  
          y += 1; // we can't use i as y coord because we skip non-matches. So j is our y coordinate
 
@@ -419,7 +468,7 @@ void display(int c, char *key)  // c= character just pressed, key = in text
        //  wmove(main_win,j-offset,0); always at the top option
        wmove(main_win, y-top,0); 
       }
-   
+   /*
    if (i == linec)
       {
       if (y >= (LINES+top))
@@ -431,8 +480,8 @@ void display(int c, char *key)  // c= character just pressed, key = in text
       }
 
    bottom=y;
-   dbg(end);
-
+   */
+   
 //   // Ensure we don't scroll off the bottom of the list.
 //   if ( offset && j <= offset )
 //   {

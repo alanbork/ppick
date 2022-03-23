@@ -1,7 +1,8 @@
-ppick
+precise pick (ppick)
 =====
+ppick reads a list of choices from stdin (or command line) and outputs the selected choice to stdout. The choices can be filtered interactively before picking just by typing. Here, it differs from the well-known [pick](https://github.com/mptre/pick) command in that maches are exact, not fuzzy, which can make the filtered list a lot less confusing, and significantly shorter. Also it's source code is way simpler making it an easier base for other pick-clones. 
 
-work in progress fork of:
+It is a work in progress fork of:
 
 `tpick` is a simple, curses-based, interactive utility for picking one of a
 number of things at the terminal.  See the examples in the `examples` directory.

@@ -1,12 +1,18 @@
 //  gcc ppick.c -lncurses -o ppick
 
+/*
 // precise pick version 1.0 (c) alan robinson (https://alantechreview.blogspot.com/)
 // in most ways a simpler version of pick, but without the fuzzy matching that 
 // can get way out of hand in pick, fzf, etc. 
 // based on tpick version 1.0.0 from https://github.com/smblott-github/tpick
 // IMHO much improved over tpick: better variable names, improved scrolling, 
 // faster/less flickery display but enough UI changes to merit a fork & new name
+// future cursses dev: nice tutorial at  https://www.sbarjatiya.com/notes_wiki/index.php/Using_ncurses_library_with_C
 
+revision notes:
+rev 0: filters before showing list for the first time.
+
+*/
 
 #include <ncurses.h>
 #include <signal.h>
@@ -30,9 +36,10 @@
 #define FNM_CASEFOLD 0
 #endif
 
+// for limiting indexes within a range
 #define max(a,b)            (((a) > (b)) ? (a) : (b))
 #define min(a,b)            (((a) < (b)) ? (a) : (b))
-#define middle(a,b,c) max(a, min(b, c));
+#define middle(lower,current,upper) max(lower, min(current, upper)); // keep current bounded
 
 /* **********************************************************************
  * Usage.
@@ -132,8 +139,8 @@ static int standard_input = 1; // tpick default =0
 static char **cargv = 0;
 static int cargc = 0;
 static char *favourite = 0;
-char *match; // boolean really
-int matchCount = 0;
+char *match; //cache: did the thing array match the filter? (char=boolean 0:1)
+int matchCount = 0; // how many matches did we find?
 
 static int linec;
 static char **lineTxt;
@@ -141,6 +148,12 @@ static char **lineTxt;
 static WINDOW *prompt_win = 0;
 static WINDOW *search_win = 0;
 static WINDOW *main_win = 0;
+
+void display(int c, char *kn);
+void re_display();
+void updateResults(char *needle); // refresh filter result cache
+
+
 
 /* **********************************************************************
  * Exit keys.
@@ -165,11 +178,11 @@ void quit(const int c, const char *kn)
  * Slurp standard input into lineTxt/linec.
  */
 
-#define MAX_LINE 4096
+#define MAX_LINE 4096 // max line length
 
 void add_thing(char *buf)
 {
-   lineTxt = (char **) non_null(realloc(lineTxt,(linec+1)*sizeof(char *)));
+   lineTxt = (char **) non_null(realloc(lineTxt,(linec+1)*sizeof(char *))); // this seems really slow, but that's C for you
    lineTxt[linec] = (char *) non_null(strdup(buf));
    linec += 1;
 }
@@ -208,12 +221,6 @@ void read_standard_input_words()
 /* **********************************************************************
  * Main.
  */
-
-void display(int c, char *kn);
-void re_display();
-
-void updateResults(char *needle);
-
 int main(int original_argc, char *original_argv[])
 {
 
@@ -266,8 +273,8 @@ int main(int original_argc, char *original_argv[])
    search_win = newwin(1,COLS-prompt_len,0,prompt_len);
    waddstr(prompt_win,prompt);
 
-   re_display();
    updateResults(""); // cache the results to start off with. TODO should respect command line args
+   re_display(); // display list for the first time.
 
    while ( 1 ) {
       int c = getch();
@@ -280,7 +287,6 @@ int main(int original_argc, char *original_argv[])
 /* **********************************************************************
  * Pattern matching.
  */
-
 static char *fn_pattern = 0;
 static int fn_flag = 0;
 
@@ -301,6 +307,23 @@ void fn_match_init(char *needle)
 int fn_match(char *haystack)
    { return !fnmatch(fn_pattern,haystack,fn_flag); }
 
+void updateResults(char *needle)
+{
+// TODO rather than just caching the results in a sparse list we could rewrite the list which would be faster still but this works ok
+fn_match_init(needle);
+matchCount = 0;
+for (int i = 0; i < linec; i += 1) // linec/lineTxt are actually the lines/etc passed into tpick
+   if (fn_match(lineTxt[i]))
+      {
+      match[i] = 1;
+      matchCount++;
+      }
+   else
+      {
+      match[i] = 0;
+      }
+}
+
 /* **********************************************************************
  * Display and selection handling.
  */
@@ -320,8 +343,6 @@ void handle_selection(char *selection) // TODO command doesn't work, but maybe t
       printf("%s\n", selection);
 }
 
-void re_display()  { display(0,0);  } // causes refresh of screen with no button press
-
 void dbg(int i) // for interactive debugging keep track of single int on screen realtime
 {
 char tmp[32];   
@@ -331,22 +352,10 @@ waddstr(prompt_win,tmp);
 wclrtoeol(prompt_win);
 }
 
-void updateResults(char *needle)
-{
-// TODO rather than just caching the results in a sparse list we could rewrite the list which would be faster still but this works ok
-fn_match_init(needle);
-matchCount = 0;
-for (int i = 0; i < linec; i += 1) // linec/lineTxt are actually the lines/etc passed into tpick
-   if (fn_match(lineTxt[i]))
-      {
-      match[i] = 1;
-      matchCount++;
-      }
-   else
-      {
-      match[i] = 0;
-      }
-}
+/* **********************************************************************
+ * update the filter and then show the filtered results on the screens
+ */
+void re_display()  { display(0,0);  } // causes refresh of screen with no button press
 
 void display(int c, char *key)  // c= character just pressed, key = in text
 {
@@ -395,8 +404,8 @@ void display(int c, char *key)  // c= character just pressed, key = in text
 
 if ( key && strcmp(key,"KEY_END") == 0 )
       { current = matchCount; c = 0; }   
-
-
+  
+ 
    if ( c == ' ' )
       { c = '*'; key = (char *) keyname(c); }
 

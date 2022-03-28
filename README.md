@@ -1,6 +1,6 @@
 precise pick (ppick)
 =====
-ppick reads a list of choices from stdin (or command line) and outputs the selected choice to stdout. The choices can be filtered interactively before picking just by typing. Here, it differs from the well-known [pick](https://github.com/mptre/pick) command in that matches are exact, not fuzzy, which can make the filtered list a lot less confusing, and significantly shorter (especially if the list has a lot of punctuation) . Also it's source code is way simpler making it an easier base for other pick-clones. 
+ppick reads a list of choices from stdin (or command line) and outputs the selected choice to stdout. The choices can be filtered interactively before picking just by typing. Here, it differs from the well-known [pick](https://github.com/mptre/pick) command in that matches are exact, not fuzzy. This makes the filtered list shorter and less confusing than the results returned by [pick](https://github.com/mptre/pick), especially if the list has a lot of punctuation. Also ppick's source code is way simpler than pick, making it an easier base for other pick-clones. 
 
 Here are some of its (simple, but) great features:
 

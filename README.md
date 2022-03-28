@@ -36,3 +36,7 @@ With a POSIX shell or bash you can use command expansion:
 Use `ENTER` to exit and write the selected thing (the one at the top of the list) to standard output.  You can also exit (and fail) using either `ESCAPE`, `Control-C` or `qq`.  You never search for two consecutive `q` characters, right?
 
 There are more details in the manual page.
+
+History
+=====
+`ppick` is a fork of (tpick)[https://github.com/smblott-github/tpick), which was chosen as a base due to it's simple and easy to understand code base. Some of the code changes increase the readability (better variable names), as well as functionality (faster screen updates), but the interface, particularly at the command line, is quite different from tpick, and closer to pick. Thus the motivation to fork from tpick. 

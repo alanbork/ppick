@@ -4,6 +4,7 @@ ppick reads a list of choices from stdin (or command line) and outputs the selec
 
 Here are some of its (simple, but) great features:
 
+- reads choices from stdin by default, but with `-l` it can read it from the command line.
 - Hit `SPACE` to add the `*` wildcard; so, super-fast matching of multiple parts of the thing you're looking for.
 - Two consecutive `q` characters quits (by default); super easy and quick to type.
 - Pick your favorite with one key, `;`.  Use the `-f` option to set your favorite text.  Then, when `;` is pressed, that text is added to the search.  I use this for returning to my "home" tmux session.

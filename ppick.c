@@ -11,7 +11,7 @@
 
 revision notes:
 rev 0: filters before showing list for the first time.
-
+rev 1: clear last line before exit so that stdout result prints nicely
 */
 
 #include <ncurses.h>
@@ -47,10 +47,11 @@ rev 0: filters before showing list for the first time.
 
 char *usage_message[] =
    {
-      "ppick [OPTIONS...] -l [THINGS...]",
+      "[THINGS |] ppick [OPTIONS...] [-l THINGS...]",
+      "(Precise) Pick THINGS from stdin interactively and print result to stdout (v. 1.0)",
       "OPTIONS:",
-      "   -l      : read things from the command line (whitespace seperated)",
-      "   -w      : read things from standard input (whitespace separated)",
+      "   -l      : read things from command line instead of stdin (whitespace seperated)",
+      "   -w      : read things from stdin (whitespace separated instead of newline)",
       "   -p TEXT : prepend TEXT to fnmatch pattern (default is \"*\")",
       "   -s TEXT : append TEXT to fnmatch pattern (default is \"*\")",
       "   -f TEXT : set your favourite text, which is added to the search when you type ';'",
@@ -368,11 +369,14 @@ void display(int c, char *key)  // c= character just pressed, key = in text
    int change = 0;
 
 
-   if ( c == '\n' ) { // end on enter
+   if ( c == '\n' ) { // enter pressed, finish up, print selection to stdout, and exit
+   	  wmove(main_win, LINES-2, 0); // clear last line so that our selection is easy to see. Not sure why LINES-2 is the magic number that makes this work... But it does. Needed for acutal console, not xterm/putty/etc
+      wclrtoeol(main_win); // clear to end of line
+      wrefresh(main_win);
       curses_end();
       if ( ! selection )
          exit(1);
-      handle_selection(selection);
+      handle_selection(selection); // this seems real buggy I vote we remove it
       exit(0);
    }
 
@@ -453,8 +457,8 @@ if ( key && strcmp(key,"KEY_END") == 0 )
  // fn_match_init(search);
    
   int y = 0; // position we draw each line to on the screen
- 
   current = middle(0, current, matchCount-1); // acceptable range 0...filtered(linec)-1
+
   int top = middle(0, (current-LINES/2), matchCount-LINES+1);//linec-LINES+1); // don't scroll any further than what is needed to see the bottom
 
    for (int i=0; i<linec; i+=1) // linec/lineTxt are actually the lines/etc passed into tpick
@@ -477,33 +481,10 @@ if ( key && strcmp(key,"KEY_END") == 0 )
        //  wmove(main_win,j-offset,0); always at the top option
        wmove(main_win, y-top,0); 
       }
-   /*
-   if (i == linec)
-      {
-      if (y >= (LINES+top))
-         {
-         wclear(main_win);
-         end = y-1;
-         goto redo;
-         }
-      }
 
-   bottom=y;
-   */
-   
-//   // Ensure we don't scroll off the bottom of the list.
-//   if ( offset && j <= offset )
-//   {
-//      offset = j ? j-1 : 0;
-//      re_display();
-//      return;
-//   }
-
-   refresh();
-   wrefresh(main_win);
+   refresh(); // The refresh subroutine updates the stdscr.
+   wrefresh(main_win); // The wrefresh subroutine refreshes a user-defined window.
    wrefresh(prompt_win);
    wrefresh(search_win);
    wmove(search_win,0,search_len);
-   curs_set(1);
-}
-
+   curs_set(1); // turn cursor back on 

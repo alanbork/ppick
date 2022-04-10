@@ -18,6 +18,7 @@ And here are a couple of examples...
 Then type `de`, and the screen looks like...
 
 ![screenshot](https://raw.githubusercontent.com/smblott-github/tpick/master/misc/screenshot1.png) 
+
 (note, screenshot is dated to how things looked under tpick, though it's not that different now).
 
 Interactively pick a file (with `zsh`-style globing):
@@ -40,4 +41,4 @@ There are more details in the manual page.
 
 History
 =====
-`ppick` is a fork of (tpick)[https://github.com/smblott-github/tpick], which was chosen as a base due to it's simple and easy to understand code base. Some of the code changes increase the readability (better variable names), as well as functionality (faster screen updates), but the interface, particularly at the command line, is quite different from tpick, and closer to pick. Thus the motivation to fork from tpick. 
+`ppick` is a fork of [tpick](https://github.com/smblott-github/tpick), which was chosen as a base due to its simple and easy to understand code base. Some of the code changes increase the readability (better variable names), as well as functionality (faster screen updates), but the interface, particularly at the command line, is quite different from tpick, and closer to pick. Thus the motivation to fork from tpick. 
